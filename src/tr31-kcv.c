@@ -72,8 +72,8 @@ enum tr31_kcv_option_keys_t {
 // argp option structure
 static struct argp_option argp_options[] = {
 	{ "key", TR31_KCV_OPTION_KEY, "KEY", 0, "Key for which to compute the Key Check Value (KCV). Use - to read raw bytes from stdin." },
-	{ "algorithm", TR31_KCV_OPTION_ALGORITHM, "TDES|AES", 0, "Algorithm of the key." },
-	{ "kcv-algorithm", TR31_KCV_OPTION_KCV_ALGORITHM, "legacy|cmac", 0, "KCV algorithm. Defaults to \"legacy\" for TDES and \"cmac\" for AES. AES only supports \"cmac\"." },
+	{ "algorithm", TR31_KCV_OPTION_ALGORITHM, "TDES|AES", 0, "Algorithm of the key. If omitted, all applicable KCV combinations are listed." },
+	{ "kcv-algorithm", TR31_KCV_OPTION_KCV_ALGORITHM, "legacy|cmac", 0, "KCV algorithm. Defaults to \"legacy\" for TDES and \"cmac\" for AES. AES only supports \"cmac\". Requires --algorithm." },
 
 	{ "version", TR31_KCV_OPTION_VERSION, NULL, 0, "Display TR-31 library version" },
 
@@ -87,7 +87,8 @@ static struct argp argp_config = {
 	NULL,
 	" \v" // force the text to be after the options in the help message
 	"Compute the Key Check Value (KCV) of a key, as used by the KC, KP and PK "
-	"optional blocks.\n\n"
+	"optional blocks. If --algorithm is omitted, all applicable KCV "
+	"combinations are listed.\n\n"
 	"NOTE:\nThe KEY value is a string of hex digits representing binary data, or - to read raw bytes from stdin.",
 };
 
@@ -195,8 +196,8 @@ static error_t argp_parser_helper(int key, char* arg, struct argp_state* state)
 				argp_error(state, "The --key option is required");
 				return EINVAL;
 			}
-			if (!options->algorithm) {
-				argp_error(state, "The --algorithm option is required");
+			if (options->kcv_algorithm && !options->algorithm) {
+				argp_error(state, "The --kcv-algorithm option requires --algorithm");
 				return EINVAL;
 			}
 
@@ -279,6 +280,45 @@ static void print_hex(const void* buf, size_t length)
 	}
 }
 
+// KCV output helper function
+static void print_kcv(const char* label, int r, const void* kcv, size_t kcv_len)
+{
+	printf("%s: ", label);
+	if (r < 0) {
+		printf("Not applicable (internal error)\n");
+		return;
+	}
+	if (r > 0) {
+		printf("Not applicable (unsupported key length)\n");
+		return;
+	}
+	print_hex(kcv, kcv_len);
+	printf("\n");
+}
+
+// KCV computation helper function; lists all applicable KCV combinations
+static int do_tr31_kcv_all(const struct tr31_kcv_options_t* options)
+{
+	int r;
+	uint8_t kcv[AES_KCV_SIZE]; // large enough for all supported KCV algorithms
+
+	printf("Key: ");
+	print_hex(options->key_buf, options->key_buf_len);
+	printf(" (%zu bytes)\n\n", options->key_buf_len);
+
+	r = crypto_tdes_kcv_legacy(options->key_buf, options->key_buf_len, kcv);
+	print_kcv("TDES legacy KCV", r, kcv, DES_KCV_SIZE_LEGACY);
+
+	r = crypto_tdes_kcv_cmac(options->key_buf, options->key_buf_len, kcv);
+	print_kcv("TDES CMAC KCV", r, kcv, DES_KCV_SIZE_CMAC);
+
+	r = crypto_aes_kcv(options->key_buf, options->key_buf_len, kcv);
+	print_kcv("AES CMAC KCV", r, kcv, AES_KCV_SIZE);
+
+	crypto_cleanse(kcv, sizeof(kcv));
+	return 0;
+}
+
 // KCV computation helper function
 static int do_tr31_kcv(const struct tr31_kcv_options_t* options)
 {
@@ -286,6 +326,11 @@ static int do_tr31_kcv(const struct tr31_kcv_options_t* options)
 	uint8_t kcv[AES_KCV_SIZE]; // large enough for all supported KCV algorithms
 	size_t kcv_len;
 	const char* kcv_algorithm;
+
+	// if no algorithm is specified, list all applicable KCV combinations
+	if (!options->algorithm) {
+		return do_tr31_kcv_all(options);
+	}
 
 	if (strcmp(options->algorithm, "TDES") == 0) {
 		kcv_algorithm = options->kcv_algorithm ? options->kcv_algorithm : "legacy";

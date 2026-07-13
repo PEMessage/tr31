@@ -1083,6 +1083,22 @@ if(TARGET tr31-kcv AND BUILD_TESTING)
 			PASS_REGULAR_EXPRESSION "^KCV: 08793E25AB[\r\n]"
 	)
 
+	# tr31-kcv: list all KCV combinations when --algorithm is omitted
+	add_test(NAME tr31_kcv_test4
+		COMMAND tr31-kcv --key BF82DAC6A33DF92CE66E15B70E5DCEB6
+	)
+	string(CONCAT tr31_kcv_test4_regex
+		"^Key: BF82DAC6A33DF92CE66E15B70E5DCEB6 \\(16 bytes\\)[\r\n]"
+		"[\r\n]"
+		"TDES legacy KCV: 0169E3[\r\n]"
+		"TDES CMAC KCV: 697CE2E902[\r\n]"
+		"AES CMAC KCV: 36EE13CB84[\r\n]"
+	)
+	set_tests_properties(tr31_kcv_test4
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION ${tr31_kcv_test4_regex}
+	)
+
 	# ASCII header (as hex) concatenated with the decrypted payload of the
 	# tr31_tool_test1 key block; this is the data over which the authenticator
 	# is computed. KBPK: AB2E09DB3EF0BA71E0CE6CD755C23A3B
