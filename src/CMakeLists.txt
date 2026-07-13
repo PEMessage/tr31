@@ -219,6 +219,66 @@ if(BUILD_TR31_TOOL)
 		RUNTIME
 			COMPONENT tr31_runtime
 	)
+
+	add_executable(tr31-kcv tr31-kcv.c)
+	target_include_directories(tr31-kcv PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) # for generated config file
+	target_link_libraries(tr31-kcv PRIVATE crypto_tdes crypto_aes crypto_mem tr31)
+	if(TARGET libargp::argp)
+		target_link_libraries(tr31-kcv PRIVATE libargp::argp)
+	endif()
+
+	install(
+		TARGETS
+			tr31-kcv
+		EXPORT tr31Targets # for use by install(EXPORT) command
+		RUNTIME
+			COMPONENT tr31_runtime
+	)
+
+	add_executable(tr31-mac tr31-mac.c)
+	target_include_directories(tr31-mac PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) # for generated config file
+	target_link_libraries(tr31-mac PRIVATE crypto_tdes crypto_aes crypto_mem tr31)
+	if(TARGET libargp::argp)
+		target_link_libraries(tr31-mac PRIVATE libargp::argp)
+	endif()
+
+	install(
+		TARGETS
+			tr31-mac
+		EXPORT tr31Targets # for use by install(EXPORT) command
+		RUNTIME
+			COMPONENT tr31_runtime
+	)
+
+	add_executable(tr31-crypt tr31-crypt.c)
+	target_include_directories(tr31-crypt PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) # for generated config file
+	target_link_libraries(tr31-crypt PRIVATE crypto_tdes crypto_aes crypto_mem tr31)
+	if(TARGET libargp::argp)
+		target_link_libraries(tr31-crypt PRIVATE libargp::argp)
+	endif()
+
+	install(
+		TARGETS
+			tr31-crypt
+		EXPORT tr31Targets # for use by install(EXPORT) command
+		RUNTIME
+			COMPONENT tr31_runtime
+	)
+
+	add_executable(tr31-header tr31-header.c)
+	target_include_directories(tr31-header PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) # for generated config file
+	target_link_libraries(tr31-header PRIVATE tr31)
+	if(TARGET libargp::argp)
+		target_link_libraries(tr31-header PRIVATE libargp::argp)
+	endif()
+
+	install(
+		TARGETS
+			tr31-header
+		EXPORT tr31Targets # for use by install(EXPORT) command
+		RUNTIME
+			COMPONENT tr31_runtime
+	)
 endif()
 
 if(TARGET tr31-tool AND BUILD_TESTING)
@@ -973,5 +1033,130 @@ if(TARGET tr31-tool AND BUILD_TESTING)
 	set_tests_properties(tr31_tool_test54
 		PROPERTIES
 			PASS_REGULAR_EXPRESSION ${tr31_tool_test54_regex}
+	)
+endif()
+
+# Tests for the atomic key block tools
+#
+# All vectors below are derived from the key block and KBPK of tr31_tool_test1,
+# so they can be cross-checked against tr31-tool or any other implementation:
+#
+#   KBPK (TDES2, 16 bytes)     : AB2E09DB3EF0BA71E0CE6CD755C23A3B
+#   Key block (format version B, 128 bytes):
+#     B0128B1TX00N0300KS18FFFF00A0200001E00000KC0C000169E3KP0C00ECAD62
+#     6F9F1A826814AA066D86C8C18BD0E14033E1EBEC75BEDF586E6E325F3AA8C0E5
+#   ASCII header (64 bytes)    : B0128B1TX00N0300KS18FFFF00A0200001E00000KC0C000169E3KP0C00ECAD62
+#   Encrypted payload (24 bytes): 6F9F1A826814AA066D86C8C18BD0E14033E1EBEC75BEDF58
+#   Authenticator (8 bytes)     : 6E6E325F3AA8C0E5
+#   Wrapped key (16 bytes)      : BF82DAC6A33DF92CE66E15B70E5DCEB6
+#
+# Intermediate keys derived from the KBPK for format version B (TDES Key
+# Derivation Binding Method); reproduce with:
+#   tr31-kbpk --kbpk AB2E09DB3EF0BA71E0CE6CD755C23A3B
+#     KBEK : 7F352D458B7B3069A5C79A2290B22FC7
+#     KBAK : F2A8CE3BAAB27F1FB344A4AB288ADEDF
+if(TARGET tr31-kcv AND BUILD_TESTING)
+	# tr31-kcv: TDES legacy KCV of the wrapped key (matches KC optional block in tr31_tool_test1)
+	add_test(NAME tr31_kcv_test1
+		COMMAND tr31-kcv --key BF82DAC6A33DF92CE66E15B70E5DCEB6 --algorithm TDES
+	)
+	set_tests_properties(tr31_kcv_test1
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^KCV: 0169E3[\r\n]"
+	)
+
+	# tr31-kcv: TDES CMAC KCV of the wrapped key BF82DAC6A33DF92CE66E15B70E5DCEB6
+	add_test(NAME tr31_kcv_test2
+		COMMAND tr31-kcv --key BF82DAC6A33DF92CE66E15B70E5DCEB6 --algorithm TDES --kcv-algorithm cmac
+	)
+	set_tests_properties(tr31_kcv_test2
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^KCV: 697CE2E902[\r\n]"
+	)
+
+	# tr31-kcv: AES CMAC KCV of the wrapped key from tr31_tool_test15
+	add_test(NAME tr31_kcv_test3
+		COMMAND tr31-kcv --key 3F419E1CB7079442AA37474C2EFBF8B8 --algorithm AES
+	)
+	set_tests_properties(tr31_kcv_test3
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^KCV: 08793E25AB[\r\n]"
+	)
+
+	# ASCII header (as hex) concatenated with the decrypted payload of the
+	# tr31_tool_test1 key block; this is the data over which the authenticator
+	# is computed. KBPK: AB2E09DB3EF0BA71E0CE6CD755C23A3B
+	set(tr31_atomic_mac_data "42303132384231545830304E303330304B53313846464646303041303230303030314530303030304B43304330303031363945334B50304330304543414436320080BF82DAC6A33DF92CE66E15B70E5DCEB6E0F5A23E643C")
+
+	# tr31-mac: generate version B authenticator (TDES CMAC)
+	# KBAK F2A8CE3BAAB27F1FB344A4AB288ADEDF is derived from KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B (see tr31-kbpk)
+	add_test(NAME tr31_mac_test1
+		COMMAND tr31-mac --version-id B --kbak F2A8CE3BAAB27F1FB344A4AB288ADEDF --data ${tr31_atomic_mac_data}
+	)
+	set_tests_properties(tr31_mac_test1
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^MAC: 6E6E325F3AA8C0E5[\r\n]"
+	)
+
+	# tr31-mac: verify version B authenticator
+	# KBAK F2A8CE3BAAB27F1FB344A4AB288ADEDF is derived from KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B (see tr31-kbpk)
+	add_test(NAME tr31_mac_test2
+		COMMAND tr31-mac --version-id B --kbak F2A8CE3BAAB27F1FB344A4AB288ADEDF --data ${tr31_atomic_mac_data} --verify 6E6E325F3AA8C0E5
+	)
+	set_tests_properties(tr31_mac_test2
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "MAC verification successful"
+	)
+
+	# tr31-mac: verification failure for incorrect authenticator
+	# KBAK F2A8CE3BAAB27F1FB344A4AB288ADEDF is derived from KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B (see tr31-kbpk)
+	add_test(NAME tr31_mac_test3
+		COMMAND tr31-mac --version-id B --kbak F2A8CE3BAAB27F1FB344A4AB288ADEDF --data ${tr31_atomic_mac_data} --verify 0000000000000000
+	)
+	set_tests_properties(tr31_mac_test3
+		PROPERTIES
+			WILL_FAIL TRUE
+	)
+
+	# tr31-crypt: decrypt version B payload (IV is the authenticator)
+	# KBEK 7F352D458B7B3069A5C79A2290B22FC7 is derived from KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B (see tr31-kbpk)
+	add_test(NAME tr31_crypt_test1
+		COMMAND tr31-crypt --decrypt --version-id B --kbek 7F352D458B7B3069A5C79A2290B22FC7 --iv 6E6E325F3AA8C0E5 --data 6F9F1A826814AA066D86C8C18BD0E14033E1EBEC75BEDF58
+	)
+	set_tests_properties(tr31_crypt_test1
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^0080BF82DAC6A33DF92CE66E15B70E5DCEB6E0F5A23E643C[\r\n]"
+	)
+
+	# tr31-crypt: encrypt version B payload (round-trip of tr31_crypt_test1)
+	# KBEK 7F352D458B7B3069A5C79A2290B22FC7 is derived from KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B (see tr31-kbpk)
+	add_test(NAME tr31_crypt_test2
+		COMMAND tr31-crypt --encrypt --version-id B --kbek 7F352D458B7B3069A5C79A2290B22FC7 --iv 6E6E325F3AA8C0E5 --data 0080BF82DAC6A33DF92CE66E15B70E5DCEB6E0F5A23E643C
+	)
+	set_tests_properties(tr31_crypt_test2
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION "^6F9F1A826814AA066D86C8C18BD0E14033E1EBEC75BEDF58[\r\n]"
+	)
+
+	# tr31-header: decode header and optional blocks (key block from tr31_tool_test1, KBPK AB2E09DB3EF0BA71E0CE6CD755C23A3B)
+	add_test(NAME tr31_header_test1
+		COMMAND tr31-header --header B0128B1TX00N0300KS18FFFF00A0200001E00000KC0C000169E3KP0C00ECAD626F9F1A826814AA066D86C8C18BD0E14033E1EBEC75BEDF586E6E325F3AA8C0E5
+	)
+	string(CONCAT tr31_header_test1_regex
+		"^Key block format version: B[\r\n]"
+		"Key usage: \\[B1\\] Initial DUKPT Key \\(IK/IPEK\\)[\r\n]"
+		"Key algorithm: \\[T\\] TDES[\r\n]"
+		"Key mode of use: \\[X\\] Key Derivation[\r\n]"
+		"Key version: Unused[\r\n]"
+		"Key exportability: \\[N\\] Not exportable[\r\n]"
+		"Key context: \\[0\\] Determined by wrapping key[\r\n]"
+		"Optional blocks \\[3\\]:[\r\n]"
+		"\t\\[KS\\] Initial Key Serial Number \\(KSN\\): FFFF00A0200001E00000[\r\n]"
+		"\t\\[KC\\] Key Check Value \\(KCV\\) of wrapped key: 0169E3 \\(Legacy KCV algorithm\\)[\r\n]"
+		"\t\\[KP\\] Key Check Value \\(KCV\\) of KBPK: ECAD62 \\(Legacy KCV algorithm\\)[\r\n]"
+	)
+	set_tests_properties(tr31_header_test1
+		PROPERTIES
+			PASS_REGULAR_EXPRESSION ${tr31_header_test1_regex}
 	)
 endif()
