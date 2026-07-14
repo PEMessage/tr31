@@ -2,7 +2,7 @@
  * @file tr31.c
  * @brief High level TR-31 library interface
  *
- * Copyright 2020-2025 Leon Lynch
+ * Copyright 2020-2026 Leon Lynch
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -2766,6 +2766,7 @@ static int tr31_opt_block_parse(
 		// extended optional block length
 		const struct tr31_opt_blk_hdr_ext_t* opt_blk_hdr_ext = ptr;
 		size_t opt_blk_len_byte_count;
+		size_t opt_blk_len_size;
 
 		// parse extended length byte count
 		if (sizeof(struct tr31_opt_blk_hdr_ext_t) > remaining_len) {
@@ -2778,13 +2779,15 @@ static int tr31_opt_block_parse(
 			return TR31_ERROR_INVALID_OPTIONAL_BLOCK_LENGTH;
 		}
 		opt_blk_len_byte_count = r;
+		// each extended length byte is encoded as two hex digits
+		opt_blk_len_size = opt_blk_len_byte_count * 2;
 
 		// parse extended length field
-		if (sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_byte_count > remaining_len) {
+		if (sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_size > remaining_len) {
 			// optional block parsing exceeds remaining key block length
 			return TR31_ERROR_INVALID_OPTIONAL_BLOCK_LENGTH;
 		}
-		r = hex_to_int(opt_blk_hdr_ext->ext_length, opt_blk_len_byte_count);
+		r = hex_to_int(opt_blk_hdr_ext->ext_length, opt_blk_len_size);
 		if (r < 0) {
 			// parse error
 			return TR31_ERROR_INVALID_OPTIONAL_BLOCK_LENGTH;
@@ -2792,7 +2795,7 @@ static int tr31_opt_block_parse(
 		*opt_blk_len = r;
 
 		// remember header length for later computations
-		opt_blk_hdr_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_byte_count;
+		opt_blk_hdr_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_size;
 	}
 
 	// ensure that optional block length is valid
@@ -2950,7 +2953,8 @@ static int tr31_opt_block_export(
 )
 {
 	struct tr31_opt_blk_hdr_t* opt_blk_hdr;
-	const size_t opt_blk_len_byte_count = 4; // must be 4 according to ANSI X9.143:2021, 6.2, table 1
+	const size_t opt_blk_len_byte_count = 2; // extended length field size in bytes; hardcoded to 2 (thus 4 hex digits) according to ANSI X9.143:2021, 6.2, table 1
+	const size_t opt_blk_len_size = opt_blk_len_byte_count * 2; // each extended length byte is encoded as two hex digits
 	size_t opt_blk_hdr_len;
 	void* opt_blk_data;
 
@@ -2986,10 +2990,10 @@ static int tr31_opt_block_export(
 		// remember header length for later computations
 		opt_blk_hdr_len = sizeof(struct tr31_opt_blk_hdr_t);
 
-	} else if (sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_byte_count + opt_ctx->data_length < 65536) {
+	} else if (sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_size + opt_ctx->data_length < 65536) {
 		// extended optional block length
 		struct tr31_opt_blk_hdr_ext_t* opt_blk_hdr_ext = ptr;
-		*opt_blk_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_byte_count + opt_ctx->data_length;
+		*opt_blk_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_size + opt_ctx->data_length;
 		if (*opt_blk_len > remaining_len) {
 			// optional block length exceeds remaining key block length
 			return TR31_ERROR_INVALID_LENGTH;
@@ -2998,10 +3002,10 @@ static int tr31_opt_block_export(
 		// populate extended optional block length
 		memset(opt_blk_hdr_ext->reserved, 0x30, sizeof(opt_blk_hdr_ext->reserved));
 		int_to_hex(opt_blk_len_byte_count, opt_blk_hdr_ext->ext_length_byte_count, sizeof(opt_blk_hdr_ext->ext_length_byte_count));
-		int_to_hex(*opt_blk_len, opt_blk_hdr_ext->ext_length, opt_blk_len_byte_count);
+		int_to_hex(*opt_blk_len, opt_blk_hdr_ext->ext_length, opt_blk_len_size);
 
 		// remember header length for later computations
-		opt_blk_hdr_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_byte_count;
+		opt_blk_hdr_len = sizeof(struct tr31_opt_blk_hdr_ext_t) + opt_blk_len_size;
 
 	} else {
 		// unsupported optional block length
