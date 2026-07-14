@@ -17,6 +17,9 @@ project(tr31
 # Determine whether this project is the top-level project
 set(TR31_IS_TOP_LEVEL ${tr31_IS_TOP_LEVEL})
 
+# Generate compile_commands.json by default
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Configure compiler
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_EXTENSIONS OFF)
