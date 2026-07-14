@@ -204,6 +204,21 @@ if(BUILD_TR31_TOOL)
 		RUNTIME
 			COMPONENT tr31_runtime
 	)
+
+	add_executable(tr31-kbpk tr31-kbpk.c)
+	target_include_directories(tr31-kbpk PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) # for generated config file
+	target_link_libraries(tr31-kbpk PRIVATE crypto_mem tr31)
+	if(TARGET libargp::argp)
+		target_link_libraries(tr31-kbpk PRIVATE libargp::argp)
+	endif()
+
+	install(
+		TARGETS
+			tr31-kbpk
+		EXPORT tr31Targets # for use by install(EXPORT) command
+		RUNTIME
+			COMPONENT tr31_runtime
+	)
 endif()
 
 if(TARGET tr31-tool AND BUILD_TESTING)
